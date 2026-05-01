@@ -4,6 +4,8 @@ A local, requirement-level project board for code repositories. Each card captur
 
 Pairs with the **`progress-tracker`** Claude skill (in [`skill/`](./skill/)) so AI assistants can register requirements, log research, and track decisions during normal conversation.
 
+![board](./docs/screenshot-board.png)
+
 ## Why
 
 Most kanban tools either live outside the repo (Linear, Jira) or treat each card as a single-line todo. This tool keeps progress data **inside the repo** (`.claude-progress/`, git-tracked), and a card is a **requirement-shaped thing**:
@@ -19,7 +21,7 @@ The board renders the same data, the REST API edits it, and a Claude skill lets 
 
 - **Backend**: Python 3.11+, FastAPI, Pydantic v2 — single small module set
 - **Frontend**: React 18 + TypeScript + Vite + dnd-kit + react-query + react-markdown
-- **Storage**: per-project `.claude-progress/state.json` (JSON, schemaVersion = 2)
+- **Storage**: per-project `.claude-progress/state.json` (plain JSON in your repo)
 - **Discovery**: explicit registry at `<install>/.config/projects.json` (auto-bootstrapped on first run from `$PROGRESS_PROJECTS_ROOT` or `~/workspace/projects`)
 
 ## Install & run
@@ -74,13 +76,26 @@ Two ways:
 
 The registry lives at `<install>/.config/projects.json` and is gitignored — it's per-machine state.
 
-## Schema (v2)
+## What's in a card
+
+Click a card and the right panel opens with everything attached to that requirement:
+
+![card detail](./docs/screenshot-detail.png)
+
+The four buckets — `body` / `subtasks[]` / `references[]` / `findings[]` — are deliberately separate:
+
+- **`body`** describes the requirement (what + why), written once
+- **`subtasks[]`** are actionable steps with intra-card `blockedBy` dependencies; check them off as you go
+- **`references[]`** are external material to consult (links, docs, design files)
+- **`findings[]`** accumulate as you work — research results, code-exploration discoveries, decisions; they keep their timestamp so you can see how understanding evolved
+
+![references and findings](./docs/screenshot-findings.png)
+
+### Card storage shape
 
 ```jsonc
 {
-  "schemaVersion": 2,
   "project": "myrepo",
-  "updatedAt": "2026-05-01T12:00:00Z",
   "cards": [
     {
       "id": "c_a1b2c3d4e5",
@@ -92,36 +107,18 @@ The registry lives at `<install>/.config/projects.json` and is gitignored — it
       "tags": [],
       "priority": null,
       "subtasks": [
-        {
-          "id": "s_x1y2z3w4v5",
-          "title": "actionable step",
-          "done": false,
-          "body": "details (markdown)",
-          "blockedBy": ["s_..."],
-          "createdAt": "...",
-          "updatedAt": "..."
-        }
+        { "id": "s_...", "title": "...", "done": false, "body": "...", "blockedBy": ["s_..."] }
       ],
       "references": [
         { "id": "r_...", "title": "...", "url": "...", "note": "..." }
       ],
       "findings": [
-        {
-          "id": "f_...",
-          "title": "one-line summary",
-          "body": "research result accumulated during work",
-          "createdAt": "...",
-          "updatedAt": "..."
-        }
-      ],
-      "createdAt": "...",
-      "updatedAt": "..."
+        { "id": "f_...", "title": "one-line summary", "body": "research result" }
+      ]
     }
   ]
 }
 ```
-
-The four buckets — `body` / `subtasks[]` / `references[]` / `findings[]` — are deliberately separate. `body` describes the requirement; subtasks track execution; references collect what to read; findings accumulate what you've learned. Don't blur them.
 
 ## REST API
 
