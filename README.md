@@ -161,7 +161,7 @@ It also triggers proactively on natural-language phrases (e.g., "log this requir
 
 ## Acknowledgements
 
-The kanban frontend was originally adapted from **[L1AD/claude-task-viewer](https://github.com/L1AD/claude-task-viewer)** — a web Kanban for `~/.claude/tasks/`. Progress Cockpit grew from there: pluggable data sources, a different storage model (requirement cards vs. task lists), full CRUD over a structured schema, drag-to-change-status, and a paired Claude skill. The single-file vanilla JS UI was eventually rewritten in React, but the visual language and column structure trace back to that project — credit where credit is due.
+The kanban frontend was originally adapted from **[L1AD/claude-task-viewer](https://github.com/L1AD/claude-task-viewer)** — a web Kanban for `~/.claude/tasks/`. Progress Cockpit grew from there: pluggable data sources, a different storage model (requirement cards vs. task lists), full CRUD over a structured schema, drag-to-change-status, and a paired Claude skill. 
 
 ## License
 
