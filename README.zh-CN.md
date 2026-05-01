@@ -6,7 +6,11 @@
 
 搭配 **`progress-tracker`** Claude skill([`skill/`](./skill/) 目录),AI 助手可以在普通对话中替你登记需求、记录调研、追踪决策,无需切换工具。
 
-![看板](./docs/screenshot-board.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-board-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-board-light.png">
+  <img alt="看板" src="./docs/screenshot-board-light.png">
+</picture>
 
 ## 为什么
 
@@ -82,7 +86,11 @@ cd frontend && pnpm dev
 
 点开任意卡,右侧面板显示这个需求的全部附属信息:
 
-![卡片详情](./docs/screenshot-detail.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-detail-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-detail-light.png">
+  <img alt="卡片详情" src="./docs/screenshot-detail-light.png">
+</picture>
 
 四个数据桶 —— `body` / `subtasks[]` / `references[]` / `findings[]` —— 故意分开,各管各的:
 
@@ -91,7 +99,11 @@ cd frontend && pnpm dev
 - **`references[]`** 是外部参考资料(链接、文档、设计稿)
 - **`findings[]`** 在推进过程中累积 —— 调研结论、代码探索发现、决策。每条带时间戳,看得到认识是怎么演进的
 
-![参考资料和调研发现](./docs/screenshot-findings.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-findings-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-findings-light.png">
+  <img alt="参考资料和调研发现" src="./docs/screenshot-findings-light.png">
+</picture>
 
 ### 卡的存储结构
 

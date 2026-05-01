@@ -6,7 +6,11 @@ A local, requirement-level project board for code repositories. Each card captur
 
 Pairs with the **`progress-tracker`** Claude skill (in [`skill/`](./skill/)) so AI assistants can register requirements, log research, and track decisions during normal conversation.
 
-![board](./docs/screenshot-board.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-board-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-board-light.png">
+  <img alt="board" src="./docs/screenshot-board-light.png">
+</picture>
 
 ## Why
 
@@ -82,7 +86,11 @@ The registry lives at `<install>/.config/projects.json` and is gitignored — it
 
 Click a card and the right panel opens with everything attached to that requirement:
 
-![card detail](./docs/screenshot-detail.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-detail-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-detail-light.png">
+  <img alt="card detail" src="./docs/screenshot-detail-light.png">
+</picture>
 
 The four buckets — `body` / `subtasks[]` / `references[]` / `findings[]` — are deliberately separate:
 
@@ -91,7 +99,11 @@ The four buckets — `body` / `subtasks[]` / `references[]` / `findings[]` — a
 - **`references[]`** are external material to consult (links, docs, design files)
 - **`findings[]`** accumulate as you work — research results, code-exploration discoveries, decisions; they keep their timestamp so you can see how understanding evolved
 
-![references and findings](./docs/screenshot-findings.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-findings-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-findings-light.png">
+  <img alt="references and findings" src="./docs/screenshot-findings-light.png">
+</picture>
 
 ### Card storage shape
 
