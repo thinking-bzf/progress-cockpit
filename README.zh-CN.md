@@ -161,7 +161,7 @@ skill 暴露的子命令:
 
 ## 致谢
 
-看板前端最早改自 **[L1AD/claude-task-viewer](https://github.com/L1AD/claude-task-viewer)** —— 一个为 `~/.claude/tasks/` 做的 Web 看板。Progress Cockpit 在它基础上长出来:可插拔数据源、不同的存储模型(需求卡 vs 任务列表)、结构化 schema 上的完整 CRUD、拖拽改状态、配套的 Claude skill。最初的 vanilla JS 单文件 UI 后来被全量重写成 React,但视觉语言和列结构能追溯到那个项目 —— 该认的认。
+看板前端最早改自 **[L1AD/claude-task-viewer](https://github.com/L1AD/claude-task-viewer)** —— 一个为 `~/.claude/tasks/` 做的 Web 看板。Progress Cockpit 在它基础上长出来:可插拔数据源、不同的存储模型(需求卡 vs 任务列表)、结构化 schema 上的完整 CRUD、拖拽改状态、配套的 Claude skill。
 
 ## License
 
