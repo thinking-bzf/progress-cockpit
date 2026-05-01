@@ -1,5 +1,7 @@
 # Progress Cockpit
 
+English · [中文](./README.zh-CN.md)
+
 A local, requirement-level project board for code repositories. Each card captures a feature/requirement with subtasks, references, and accumulating research findings — all stored as plain JSON inside the repo it describes.
 
 Pairs with the **`progress-tracker`** Claude skill (in [`skill/`](./skill/)) so AI assistants can register requirements, log research, and track decisions during normal conversation.
