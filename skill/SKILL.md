@@ -4,8 +4,9 @@ description: >
   Track requirements / subtasks / research / references in a per-repo
   `.claude-progress/` directory, optionally synced via git for cross-device.
   Maintains: state.json (structured cards with subtasks / references / findings,
-  editable via the progress-cockpit UI or REST API), JOURNAL.md (append-only
-  timeline), CONTEXT.md (slow-moving long-term notes), archive/ (history).
+  editable via the progress-cockpit MCP tools, REST API, or UI), JOURNAL.md
+  (append-only timeline), CONTEXT.md (slow-moving long-term notes), archive/
+  (history).
   Triggers on slash commands `/progress-tracker`, `/progress-tracker load`,
   `/progress-tracker update`, `/progress-tracker status`, `/progress-tracker init`,
   or natural-language phrases like "log this requirement", "record findings",
@@ -26,7 +27,7 @@ via plain file edits.
 
 | File | Purpose | Update style |
 |---|---|---|
-| `.claude-progress/state.json` | Current snapshot (structured cards) | Prefer **progress-cockpit REST API** (http://127.0.0.1:3458); fall back to direct file edit if the server is not running |
+| `.claude-progress/state.json` | Current snapshot (structured cards) | Prefer **progress-cockpit MCP tools**; fall back to **REST API** (http://127.0.0.1:3458) when MCP unavailable; last resort is direct file edit |
 | `.claude-progress/JOURNAL.md` | Timeline (completions, decisions, gotchas) | **Append**, newest at top |
 | `.claude-progress/CONTEXT.md` | Long-term context (architecture, conventions) | **Slow** — only stable facts |
 | `.claude-progress/archive/*.md` | Historical (e.g. legacy STATE.md after migration) | Read-only |
@@ -90,22 +91,62 @@ via plain file edits.
 
 `subtasks[].blockedBy` references **sibling subtask ids only** (intra-card; not cross-card).
 
-## Write strategy: API first, file fallback
+## Write strategy: MCP → API → file
 
-Any write **must** probe the API first, then branch.
+Three tiers, in order of preference. **Pick the highest tier available and
+stick with it for the whole task** — don't silently fall back on per-call
+errors; surface them to the user.
 
-### Step 1 — probe (cache once per session)
+### Tier selection (decide once per session)
 
-```bash
-curl -sf -m 1 -o /dev/null http://127.0.0.1:3458/api/sources
-```
+1. **MCP available?** If your tool list includes `progress-cockpit` tools
+   (e.g. `create_card`, `get_state`, `list_projects`), use **Path A**.
+2. **API up?** Probe once:
+   ```bash
+   curl -sf -m 1 -o /dev/null http://127.0.0.1:3458/api/sources
+   ```
+   Exit `0` → use **Path B**.
+3. Otherwise → use **Path C** (direct file edit).
 
-- Exit `0` → use Path A (REST API)
-- Non-zero (timeout / refused / 4xx / 5xx) → use Path B (direct file edit)
+`{repo}` = the registered project id, usually the current repo's directory
+basename. With MCP, call `resolve_project_for_path` if unsure. With API/file,
+use `basename $(git rev-parse --show-toplevel)`.
 
-### Path A — REST API (preferred)
+### Path A — MCP tools (preferred)
 
-`{repo}` = current repo name (`basename $(git rev-parse --show-toplevel)`).
+Use the `progress-cockpit` MCP server tools directly. Typed args, no JSON
+construction. Tools available:
+
+| Op | Tool | required args |
+|---|---|---|
+| List projects | `list_projects` | – |
+| Resolve cwd → project | `resolve_project_for_path` | `path` |
+| Register project | `register_project` | `path` |
+| **Index cards (preferred read)** | `list_cards` | `project_id`, `status?` |
+| **Read one card in full** | `get_card` | `project_id`, `card_id` |
+| Read full state — large, rare | `get_state` | `project_id` |
+| Create / patch / delete card | `create_card` / `update_card` / `delete_card` | `project_id`, `title` (create) or `card_id` |
+| Subtask CRUD | `create_subtask` / `update_subtask` / `delete_subtask` | + `card_id`, `title` (create) or `subtask_id` |
+| Reference CRUD | `create_reference` / `update_reference` / `delete_reference` | + `card_id`, `title` (create) or `reference_id` |
+| Finding CRUD | `create_finding` / `update_finding` / `delete_finding` | + `card_id`, `body` (create) or `finding_id` |
+
+**Read pattern**: always start with `list_cards` (compact index — id, title,
+status, section, blocked, counts). Only call `get_card` for the specific
+card(s) you need to inspect or modify. **Avoid `get_state`** — it dumps every
+card's body + all nested arrays and routinely blows the MCP tool-result limit
+on mature projects.
+
+`update_*` patches are partial — pass only the fields you want to change.
+The server auto-bumps `updatedAt`. Deleting a subtask auto-strips its id
+from any sibling's `blockedBy`.
+
+Errors come back as tool errors — **surface them, don't fall back** to a
+lower tier mid-task. Common: wrong `project_id`, unknown `card_id`, missing
+required field.
+
+### Path B — REST API (when MCP unavailable)
+
+Same operations over plain HTTP at `http://127.0.0.1:3458`.
 
 **Card-level CRUD**
 
@@ -125,10 +166,8 @@ curl -sf -m 1 -o /dev/null http://127.0.0.1:3458/api/sources
 | Patch | `PUT  /api/projects/{repo}/cards/{cardId}/{kind}/{itemId}` | any subset |
 | Delete | `DELETE /api/projects/{repo}/cards/{cardId}/{kind}/{itemId}` | – |
 
-ID prefixes: subtask `s_`, reference `r_`, finding `f_`. Deleting a subtask
-auto-strips its id from any sibling's `blockedBy`.
-
-The API auto-updates `state.updatedAt` and item `updatedAt` — **do not compute timestamps yourself**.
+ID prefixes: subtask `s_`, reference `r_`, finding `f_`. The API auto-updates
+`state.updatedAt` and item `updatedAt` — **do not compute timestamps yourself**.
 
 Examples:
 
@@ -148,14 +187,6 @@ curl -sf -X POST http://127.0.0.1:3458/api/projects/myproject/cards/c_xxx/findin
   -H 'Content-Type: application/json' \
   -d '{"title":"Service is process-global singleton","body":"`service.py:177-182` reads yaml on boot; no runtime mutation API."}'
 
-# Add a subtask, then make another subtask depend on it
-curl -sf -X POST http://127.0.0.1:3458/api/projects/myproject/cards/c_xxx/subtasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Build encryption layer","body":"2-3 days, foundation work"}'
-# → returns {"id":"s_aaa", ...}
-curl -sf -X PUT http://127.0.0.1:3458/api/projects/myproject/cards/c_xxx/subtasks/s_bbb \
-  -H 'Content-Type: application/json' -d '{"blockedBy":["s_aaa"]}'
-
 # Mark a subtask done
 curl -sf -X PUT http://127.0.0.1:3458/api/projects/myproject/cards/c_xxx/subtasks/s_aaa \
   -H 'Content-Type: application/json' -d '{"done":true}'
@@ -165,10 +196,10 @@ If the API returns 4xx/5xx, **do not silently fall back** — surface the error
 to the user. Common causes: wrong `{repo}` name, unknown `cardId`, invalid
 payload field.
 
-### Path B — direct file edit (fallback)
+### Path C — direct file edit (offline fallback)
 
-When the API is unreachable, edit `<repo>/.claude-progress/state.json` with
-Read + Edit:
+When neither MCP nor the API is reachable, edit
+`<repo>/.claude-progress/state.json` with Read + Edit:
 
 1. **Read** the whole file.
 2. By case:
@@ -187,9 +218,9 @@ Walk up from `$(pwd)` until you find `.git/`; treat that directory as the repo r
 
 ### `load` (default with no args)
 
-1. Read `.claude-progress/state.json` + `JOURNAL.md` + `CONTEXT.md`. If state.json is missing but a legacy `STATE.md` exists, hint the user to start progress-cockpit (which auto-migrates), or run `/progress-tracker init`.
+1. Read the card index. Path A: `list_cards(project_id)` (preferred; compact). Path B: `GET /api/projects/{repo}/state` (full, fine for small projects). Path C: read `.claude-progress/state.json` directly. Also read `JOURNAL.md` + `CONTEXT.md`. If state.json is missing but a legacy `STATE.md` exists, hint the user to start progress-cockpit (which auto-migrates), or run `/progress-tracker init`.
 2. Report in this order:
-   - **Current state** — group cards by status (in_progress / pending / completed); flag `blocked: true` ones.
+   - **Current state** — group cards by status (in_progress / pending / completed); flag `blocked: true` ones. Show titles + counts; do **not** dump bodies. If the user asks about a specific card, use `get_card` to fetch its detail.
    - **Recent log** — top 3 dated sections of JOURNAL.md.
    - **Long-term context** — summarize CONTEXT.md (don't dump unless asked).
 3. End with: "Run `/progress-tracker update` to update, or edit in progress-cockpit (http://127.0.0.1:3458)."
@@ -204,7 +235,7 @@ Interactive. Ask one question at a time, **in order**:
 4. **Anything blocked / pending confirmation?** (skippable) → set `blocked: true` on the relevant pending card; write reason in `body`.
 5. **Any long-term constraints / architectural decisions to record?** (usually skip) → append to CONTEXT.md.
 
-Writes follow the strategy above (API first; file fallback). Card IDs are stable — never overwrite the whole file.
+Writes follow the tier strategy above (MCP → API → file). Card IDs are stable — never overwrite the whole file.
 
 The user can answer "skip" or "none" — that section stays unchanged.
 
