@@ -1,6 +1,8 @@
 """FastAPI app: read API matches L1AD/claude-task-viewer; write API operates on state.json."""
 from __future__ import annotations
 
+import asyncio
+import json
 import mimetypes
 import os
 from pathlib import Path
@@ -11,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .sources import ClaudeProgressSource, build_sources
 from . import registry
+from .store import state_json_path
 
 DEFAULT_SOURCE = os.environ.get("PROGRESS_SOURCE", "claude-progress")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -258,12 +261,55 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "finding not found")
         return {"deleted": fid}
 
-    # ---- SSE placeholder (kept so the UI doesn't error) -----------------
+    # ---- SSE: live updates by polling state.json mtimes ----------------
     @app.get("/api/events")
-    def events():
+    async def events():
+        async def gen():
+            yield "event: connected\ndata: {}\n\n"
+            seen: dict[str, float] = {}
+            registry_mtime: float | None = None
+            # Seed without emitting — only changes after this point produce events.
+            for pr in registry.list_projects():
+                try:
+                    seen[pr["id"]] = state_json_path(Path(pr["path"])).stat().st_mtime
+                except OSError:
+                    pass
+            try:
+                registry_mtime = registry.REGISTRY_PATH.stat().st_mtime
+            except OSError:
+                pass
+            heartbeat = 0
+            while True:
+                # Detect registry add/remove so the sidebar refreshes.
+                try:
+                    cur_reg = registry.REGISTRY_PATH.stat().st_mtime
+                except OSError:
+                    cur_reg = None
+                if cur_reg != registry_mtime:
+                    registry_mtime = cur_reg
+                    yield "event: sessions\ndata: {}\n\n"
+
+                for pr in registry.list_projects():
+                    try:
+                        mt = state_json_path(Path(pr["path"])).stat().st_mtime
+                    except OSError:
+                        continue
+                    pid = pr["id"]
+                    if seen.get(pid) != mt:
+                        seen[pid] = mt
+                        payload = json.dumps({"projectId": pid})
+                        yield f"event: state\ndata: {payload}\n\n"
+
+                heartbeat += 1
+                if heartbeat >= 15:
+                    heartbeat = 0
+                    yield ": hb\n\n"
+                await asyncio.sleep(1.0)
+
         return StreamingResponse(
-            iter(['data: {"type":"connected"}\n\n']),
+            gen(),
             media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     # ---- static frontend ------------------------------------------------

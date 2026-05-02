@@ -5,8 +5,10 @@ import { Kanban } from './components/Kanban';
 import { DetailPanel } from './components/DetailPanel';
 import { useProjectState, useSessions } from './api';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useLiveUpdates } from './hooks/useLiveUpdates';
 
 export default function App() {
+  useLiveUpdates();
   const sessionsQ = useSessions();
   const [projectId, setProjectId] = useLocalStorage<string | null>('projectId', null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
