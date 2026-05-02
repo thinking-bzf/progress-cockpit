@@ -746,15 +746,17 @@ function FindingSection(props: {
   onDelete: (f: Finding) => void;
 }) {
   const fs = props.card.findings;
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  function toggle(id: string) {
-    setOpenIds((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
+  const dialog = useDialog();
+
+  function openPreview(f: Finding) {
+    dialog.findingPreview({
+      finding: f,
+      projectId: props.projectId,
+      onEdit: () => props.onEdit(f),
+      onDelete: () => props.onDelete(f),
     });
   }
+
   return (
     <div className="detail-section">
       <div className="detail-section-header">
@@ -770,9 +772,20 @@ function FindingSection(props: {
       ) : (
         fs.map((f) => {
           const ts = (f.updatedAt || f.createdAt || '').slice(0, 16).replace('T', ' ');
-          const open = openIds.has(f.id);
           return (
-            <div key={f.id} className="nested-item">
+            <div
+              key={f.id}
+              role="button"
+              tabIndex={0}
+              className="nested-item clickable"
+              onClick={() => openPreview(f)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPreview(f);
+                }
+              }}
+            >
               <div className="nested-row">
                 <svg
                   viewBox="0 0 24 24"
@@ -790,27 +803,7 @@ function FindingSection(props: {
                   <span className="nested-title">{f.title || '(untitled)'}</span>
                   <span className="nested-meta">{ts}</span>
                 </div>
-                <button
-                  className={`nested-toggle ${open ? 'expanded' : ''}`}
-                  onClick={() => toggle(f.id)}
-                  title="Expand"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </button>
               </div>
-              {open && (
-                <div className="nested-body">
-                  {f.body?.trim() ? <Markdown source={f.body} projectId={props.projectId} /> : <em>（空）</em>}
-                  <div className="nested-actions">
-                    <button onClick={() => props.onEdit(f)}>Edit</button>
-                    <button className="danger" onClick={() => props.onDelete(f)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })

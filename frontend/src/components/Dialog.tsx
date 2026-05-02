@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Markdown } from '../markdown';
-import type { Subtask } from '../types';
+import type { Finding, Subtask } from '../types';
 
 // ============ Types ============
 
@@ -72,6 +72,13 @@ export interface SubtaskPreviewOpts {
   onDelete: () => void;
 }
 
+export interface FindingPreviewOpts {
+  finding: Finding;
+  projectId?: string | null;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
 export type ToastKind = 'info' | 'success' | 'error';
 
 interface DialogAPI {
@@ -80,6 +87,7 @@ interface DialogAPI {
   form<T extends Record<string, string>>(opts: FormOpts): Promise<T | null>;
   preview(opts: PreviewOpts): void;
   subtaskPreview(opts: SubtaskPreviewOpts): void;
+  findingPreview(opts: FindingPreviewOpts): void;
   toast(message: string, kind?: ToastKind): void;
 }
 
@@ -89,6 +97,7 @@ type DialogState =
   | { kind: 'form'; opts: FormOpts; resolve: (v: Record<string, string> | null) => void }
   | { kind: 'preview'; opts: PreviewOpts }
   | { kind: 'subtask-preview'; opts: SubtaskPreviewOpts }
+  | { kind: 'finding-preview'; opts: FindingPreviewOpts }
   | null;
 
 interface ToastItem {
@@ -134,6 +143,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       },
       subtaskPreview: (opts) => {
         setState({ kind: 'subtask-preview', opts });
+      },
+      findingPreview: (opts) => {
+        setState({ kind: 'finding-preview', opts });
       },
       toast: (message, kind = 'info') => {
         const id = Math.random().toString(36).slice(2, 10);
@@ -185,7 +197,7 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
   const wideKind =
     state.kind === 'preview'
       ? 'modal-preview'
-      : state.kind === 'subtask-preview'
+      : state.kind === 'subtask-preview' || state.kind === 'finding-preview'
         ? 'modal-subtask-preview'
         : '';
 
@@ -209,6 +221,9 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
         {state.kind === 'preview' && <PreviewBody opts={state.opts} onClose={onClose} />}
         {state.kind === 'subtask-preview' && (
           <SubtaskPreviewBody opts={state.opts} onClose={onClose} />
+        )}
+        {state.kind === 'finding-preview' && (
+          <FindingPreviewBody opts={state.opts} onClose={onClose} />
         )}
       </div>
     </div>
@@ -594,6 +609,70 @@ function SubtaskPreviewBody({
         >
           {s.done ? '↶ Mark undone' : '✓ Mark done'}
         </button>
+        <button className="btn" onClick={() => dispatch(opts.onEdit)}>
+          Edit
+        </button>
+        <button className="btn danger-solid" onClick={() => dispatch(opts.onDelete)}>
+          Delete
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ============ Finding preview ============
+
+function FindingPreviewBody({
+  opts,
+  onClose,
+}: {
+  opts: FindingPreviewOpts;
+  onClose: () => void;
+}) {
+  const { finding: f } = opts;
+  const ts = (f.updatedAt || f.createdAt || '').slice(0, 16).replace('T', ' ');
+
+  function dispatch(handler: () => void) {
+    handler();
+    onClose();
+  }
+
+  return (
+    <>
+      <div className="preview-header">
+        <div className="preview-title">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            width="14"
+            height="14"
+            style={{ flexShrink: 0, color: 'var(--accent)' }}
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m6.36 6.36l4.24 4.24M1 12h6m6 0h6" />
+          </svg>
+          <span className="preview-title-text">{f.title || '(untitled)'}</span>
+          {ts && <span className="preview-filename">{ts}</span>}
+        </div>
+        <div className="preview-actions">
+          <button className="btn" onClick={onClose} title="Close (Esc)">
+            ×
+          </button>
+        </div>
+      </div>
+      <div className="preview-body subtask-preview-body">
+        <div className="subtask-preview-content">
+          {f.body?.trim() ? (
+            <Markdown source={f.body} projectId={opts.projectId ?? null} />
+          ) : (
+            <em className="nested-empty-inline">（empty）</em>
+          )}
+        </div>
+      </div>
+      <div className="subtask-preview-actions">
         <button className="btn" onClick={() => dispatch(opts.onEdit)}>
           Edit
         </button>
