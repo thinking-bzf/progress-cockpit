@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 2,
+  "project": "demo-project",
+  "updatedAt": "2026-04-30T15:30:00+00:00",
+  "cards": [
+    {
+      "id": "c_a1b2c3d4e5",
+      "status": "in_progress",
+      "blocked": false,
+      "title": "Auth & signup flow",
+      "body": "Email + password sign-up backed by server-side sessions. See `docs/auth-design.md` for the full design — schema, endpoints, decisions.\n\nMVP: signup, email verify, login, logout, session middleware. Defer: password reset, 2FA, OAuth.",
+      "section": "backend",
+      "tags": ["auth", "p0"],
+      "priority": 1,
+      "subtasks": [
+        {
+          "id": "s_aa01000001",
+          "title": "DB schema for users + sessions",
+          "done": true,
+          "body": "Migration `001_auth.sql`. Two tables, FK on `sessions.user_id`.",
+          "blockedBy": [],
+          "createdAt": "2026-04-12T09:10:00+00:00",
+          "updatedAt": "2026-04-13T10:00:00+00:00"
+        },
+        {
+          "id": "s_aa02000002",
+          "title": "Password hashing utility (bcrypt cost 12)",
+          "done": true,
+          "body": "Wraps `bcrypt.hashpw` and `bcrypt.checkpw` with constant-time compare.",
+          "blockedBy": [],
+          "createdAt": "2026-04-12T09:11:00+00:00",
+          "updatedAt": "2026-04-14T11:30:00+00:00"
+        },
+        {
+          "id": "s_aa03000003",
+          "title": "Signup endpoint POST /auth/signup",
+          "done": true,
+          "body": "Validates email uniqueness, hashes password, returns verification token.",
+          "blockedBy": ["s_aa01000001", "s_aa02000002"],
+          "createdAt": "2026-04-15T13:20:00+00:00",
+          "updatedAt": "2026-04-18T16:00:00+00:00"
+        },
+        {
+          "id": "s_aa04000004",
+          "title": "Email verification GET /auth/verify",
+          "done": false,
+          "body": "Single-use token, 24h expiry. Need to wire in mail provider.",
+          "blockedBy": ["s_aa03000003"],
+          "createdAt": "2026-04-15T13:21:00+00:00",
+          "updatedAt": "2026-04-15T13:21:00+00:00"
+        },
+        {
+          "id": "s_aa05000005",
+          "title": "Login endpoint POST /auth/login",
+          "done": true,
+          "body": "Constant-time compare. Issues session cookie.",
+          "blockedBy": ["s_aa01000001", "s_aa02000002"],
+          "createdAt": "2026-04-15T13:22:00+00:00",
+          "updatedAt": "2026-04-22T09:45:00+00:00"
+        },
+        {
+          "id": "s_aa06000006",
+          "title": "Session middleware",
+          "done": false,
+          "body": "Looks up session by cookie, attaches `request.user`.",
+          "blockedBy": ["s_aa05000005"],
+          "createdAt": "2026-04-15T13:23:00+00:00",
+          "updatedAt": "2026-04-23T10:00:00+00:00"
+        },
+        {
+          "id": "s_aa07000007",
+          "title": "Logout endpoint POST /auth/logout",
+          "done": false,
+          "body": "Deletes session row, clears cookie.",
+          "blockedBy": ["s_aa06000006"],
+          "createdAt": "2026-04-15T13:24:00+00:00",
+          "updatedAt": "2026-04-15T13:24:00+00:00"
+        }
+      ],
+      "references": [
+        {
+          "id": "r_aa10000001",
+          "title": "Auth design RFC",
+          "url": "docs/auth-design.md",
+          "note": "schema + endpoint contracts + JWT/session tradeoff"
+        },
+        {
+          "id": "r_aa10000002",
+          "title": "OWASP session management cheat sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+          "note": "cookie flags, rotation policy"
+        }
+      ],
+      "findings": [
+        {
+          "id": "f_aa20000001",
+          "title": "Server sessions chosen over JWT",
+          "body": "Revocation is trivial (one DELETE). JWT denylist would re-introduce DB state we wanted to avoid in the first place. Session lookup is O(1) on indexed sid; cache later if needed.",
+          "createdAt": "2026-04-12T15:40:00+00:00",
+          "updatedAt": "2026-04-12T15:40:00+00:00"
+        },
+        {
+          "id": "f_aa20000002",
+          "title": "bcrypt cost factor 12 is the right balance",
+          "body": "~250ms hash on a 2024 MBP. Login latency is dominated by network anyway. Cost 14 was tested but added 1+ second on signup which was visibly slow in the UI.",
+          "createdAt": "2026-04-14T11:25:00+00:00",
+          "updatedAt": "2026-04-14T11:25:00+00:00"
+        }
+      ],
+      "createdAt": "2026-04-12T09:00:00+00:00",
+      "updatedAt": "2026-04-23T10:00:00+00:00"
+    },
+    {
+      "id": "c_b2c3d4e5f6",
+      "status": "in_progress",
+      "blocked": false,
+      "title": "URL shortening core",
+      "body": "Short-code generator, redirect handler, click counter.",
+      "section": "backend",
+      "tags": ["core"],
+      "priority": 1,
+      "subtasks": [
+        {
+          "id": "s_bb01000001",
+          "title": "Short-code generator (base62, 7 chars)",
+          "done": true,
+          "body": "Random 42 bits → base62 encode. Collisions handled by retry on insert.",
+          "blockedBy": [],
+          "createdAt": "2026-04-08T10:00:00+00:00",
+          "updatedAt": "2026-04-09T14:00:00+00:00"
+        },
+        {
+          "id": "s_bb02000002",
+          "title": "Redirect handler GET /:code",
+          "done": false,
+          "body": "302 redirect, async-increment click counter.",
+          "blockedBy": [],
+          "createdAt": "2026-04-08T10:01:00+00:00",
+          "updatedAt": "2026-04-25T13:00:00+00:00"
+        },
+        {
+          "id": "s_bb03000003",
+          "title": "Async click counter (Redis HINCRBY)",
+          "done": false,
+          "body": "Decoupled from redirect path so we can ship even if Redis is down.",
+          "blockedBy": ["s_bb02000002"],
+          "createdAt": "2026-04-08T10:02:00+00:00",
+          "updatedAt": "2026-04-08T10:02:00+00:00"
+        }
+      ],
+      "references": [],
+      "findings": [
+        {
+          "id": "f_bb20000001",
+          "title": "7 chars at base62 = 3.5T addressable codes",
+          "body": "Even at 1M new links per day we wouldn't hit collision cliff for centuries. 6 chars (56B) felt borderline; bumped to 7 for headroom.",
+          "createdAt": "2026-04-08T11:00:00+00:00",
+          "updatedAt": "2026-04-08T11:00:00+00:00"
+        }
+      ],
+      "createdAt": "2026-04-08T09:30:00+00:00",
+      "updatedAt": "2026-04-25T13:00:00+00:00"
+    },
+    {
+      "id": "c_c3d4e5f6a7",
+      "status": "pending",
+      "blocked": false,
+      "title": "Analytics dashboard",
+      "body": "Per-link click totals, referrer breakdown, time-series chart. Read-only for now.",
+      "section": "frontend",
+      "tags": ["analytics"],
+      "priority": 2,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-20T10:00:00+00:00",
+      "updatedAt": "2026-04-20T10:00:00+00:00"
+    },
+    {
+      "id": "c_d4e5f6a7b8",
+      "status": "pending",
+      "blocked": true,
+      "title": "Custom domain support",
+      "body": "Let users bring their own domain (e.g. `go.acme.com`) and have it route to our shortener. Blocked on legal review of TOS around domain ownership.",
+      "section": "backend",
+      "tags": ["enterprise"],
+      "priority": 3,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-25T11:00:00+00:00",
+      "updatedAt": "2026-04-25T11:00:00+00:00"
+    },
+    {
+      "id": "c_e5f6a7b8c9",
+      "status": "pending",
+      "blocked": false,
+      "title": "Rate limiting on /auth/login",
+      "body": "Token bucket per IP, 5/min. Returns 429 with `Retry-After` header.",
+      "section": "backend",
+      "tags": ["security"],
+      "priority": 2,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-26T09:00:00+00:00",
+      "updatedAt": "2026-04-26T09:00:00+00:00"
+    },
+    {
+      "id": "c_f6a7b8c9d0",
+      "status": "completed",
+      "blocked": false,
+      "title": "Project bootstrap (FastAPI + React)",
+      "body": "Backend skeleton, frontend Vite app, Docker Compose for local Postgres + Redis.",
+      "section": "infra",
+      "tags": [],
+      "priority": null,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-01T08:00:00+00:00",
+      "updatedAt": "2026-04-03T17:30:00+00:00"
+    },
+    {
+      "id": "c_a7b8c9d0e1",
+      "status": "completed",
+      "blocked": false,
+      "title": "Database schema v1",
+      "body": "Migration framework (alembic), initial `links` table, indexes on short_code and owner_id.",
+      "section": "infra",
+      "tags": [],
+      "priority": null,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-04T09:00:00+00:00",
+      "updatedAt": "2026-04-06T16:00:00+00:00"
+    },
+    {
+      "id": "c_b8c9d0e1f2",
+      "status": "completed",
+      "blocked": false,
+      "title": "Health check endpoint",
+      "body": "`GET /health` returns 200 if DB and Redis are reachable.",
+      "section": "infra",
+      "tags": [],
+      "priority": null,
+      "subtasks": [],
+      "references": [],
+      "findings": [],
+      "createdAt": "2026-04-05T11:00:00+00:00",
+      "updatedAt": "2026-04-05T15:00:00+00:00"
+    }
+  ]
+}
