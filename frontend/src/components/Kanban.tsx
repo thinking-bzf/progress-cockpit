@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -13,6 +13,47 @@ import {
 import type { Card, SessionSummary, Status } from '../types';
 import { STATUSES, statusLabel, useCreateCard, useUpdateCard } from '../api';
 import { useDialog } from './Dialog';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+
+type SortKey =
+  | 'manual'
+  | 'updatedDesc'
+  | 'updatedAsc'
+  | 'createdDesc'
+  | 'createdAsc'
+  | 'titleAsc';
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'manual', label: 'Default order' },
+  { value: 'updatedDesc', label: 'Updated · newest' },
+  { value: 'updatedAsc', label: 'Updated · oldest' },
+  { value: 'createdDesc', label: 'Created · newest' },
+  { value: 'createdAsc', label: 'Created · oldest' },
+  { value: 'titleAsc', label: 'Title A→Z' },
+];
+
+const DEFAULT_SORT: Record<Status, SortKey> = {
+  pending: 'manual',
+  in_progress: 'manual',
+  completed: 'updatedDesc',
+};
+
+function sortCards(cards: Card[], key: SortKey): Card[] {
+  if (key === 'manual') return cards;
+  const arr = [...cards];
+  switch (key) {
+    case 'updatedDesc':
+      return arr.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    case 'updatedAsc':
+      return arr.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    case 'createdDesc':
+      return arr.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    case 'createdAsc':
+      return arr.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    case 'titleAsc':
+      return arr.sort((a, b) => a.title.localeCompare(b.title));
+  }
+}
 
 export function Kanban(props: {
   projectId: string;
@@ -124,21 +165,31 @@ function Column(props: {
   onAdd: () => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: props.status });
+  const [sortKey, setSortKey] = useLocalStorage<SortKey>(
+    `pc:sort:${props.status}`,
+    DEFAULT_SORT[props.status],
+  );
+  const sortedCards = sortCards(props.cards, sortKey);
   return (
     <div className="column">
       <div className="column-header">
         <span className={`column-dot ${props.status}`}></span>
         <span className={`column-title ${props.status}`}>{statusLabel[props.status]}</span>
         <span className="column-count">{props.cards.length}</span>
+        <SortMenu
+          value={sortKey}
+          onChange={setSortKey}
+          label={`Sort ${statusLabel[props.status]} cards`}
+        />
         <button className="add-card-btn" onClick={props.onAdd} title="Add card">
           +
         </button>
       </div>
       <div ref={setNodeRef} className={`column-tasks ${isOver ? 'drop-target' : ''}`}>
-        {props.cards.length === 0 ? (
+        {sortedCards.length === 0 ? (
           <div className="column-empty">{props.loading ? 'Loading…' : 'No cards'}</div>
         ) : (
-          props.cards.map((c) => (
+          sortedCards.map((c) => (
             <DraggableTaskCard
               key={c.id}
               card={c}
@@ -185,6 +236,80 @@ function TaskCard(props: { card: Card; selected: boolean; dragging: boolean; onC
           )}
           {card.references.length > 0 && <span>🔗 {card.references.length}</span>}
           {card.findings.length > 0 && <span>💡 {card.findings.length}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortMenu(props: {
+  value: SortKey;
+  onChange: (k: SortKey) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointer(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = SORT_OPTIONS.find((o) => o.value === props.value);
+
+  return (
+    <div className="sort-menu" ref={ref}>
+      <button
+        type="button"
+        className={`sort-trigger ${open ? 'open' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+        title={props.label}
+        aria-label={props.label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="sort-trigger-label">{current?.label ?? 'Sort'}</span>
+        <svg
+          className="sort-trigger-chevron"
+          width="8"
+          height="5"
+          viewBox="0 0 8 5"
+          aria-hidden="true"
+        >
+          <path d="M1 1l3 3 3-3" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="sort-popover" role="listbox">
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              type="button"
+              key={opt.value}
+              role="option"
+              aria-selected={opt.value === props.value}
+              className={`sort-option ${opt.value === props.value ? 'selected' : ''}`}
+              onClick={() => {
+                props.onChange(opt.value);
+                setOpen(false);
+              }}
+            >
+              <span className="sort-option-check" aria-hidden="true">
+                {opt.value === props.value ? '✓' : ''}
+              </span>
+              <span>{opt.label}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>

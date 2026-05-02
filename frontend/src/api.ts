@@ -148,6 +148,22 @@ export const statusLabel: Record<Status, string> = {
 
 export const STATUSES: Status[] = ['pending', 'in_progress', 'completed'];
 
+/**
+ * Rewrite a reference URL so relative paths route through the backend's
+ * project-file endpoint (which serves files from inside the project root).
+ * External URLs (with a scheme like `https:` / `mailto:`) pass through
+ * untouched. Empty input returns empty string.
+ */
+export function resolveRefUrl(url: string, projectId: string | null): string {
+  if (!url) return '';
+  // Has a URL scheme like http(s):, mailto:, ftp:, file:, etc.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  if (!projectId) return url;
+  // Strip a leading "./" for cleanliness; preserve everything else verbatim.
+  const clean = url.replace(/^\.\//, '');
+  return `${BASE}/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(clean)}`;
+}
+
 // ---- registry --------------------------------------------------------
 
 export interface RegistryEntry {

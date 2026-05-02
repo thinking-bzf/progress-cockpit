@@ -3,6 +3,7 @@ import type { Card, Finding, Reference, Status, Subtask } from '../types';
 import {
   findingMutations,
   referenceMutations,
+  resolveRefUrl,
   subtaskMutations,
   useDeleteCard,
   useUpdateCard,
@@ -17,6 +18,190 @@ type EditMode =
   | { kind: 'subtask'; id: string }
   | { kind: 'reference'; id: string }
   | { kind: 'finding'; id: string };
+
+/**
+ * Compute each subtask's dependency depth without reordering. Depth 0 = no
+ * blockers (or blockers missing / cyclic), otherwise 1 + max(depth of
+ * blockers). Returned in the original insertion order; depth is used purely
+ * for visual indentation.
+ */
+function annotateDepth(
+  subs: Subtask[],
+  byId: Record<string, Subtask>,
+): { sub: Subtask; depth: number }[] {
+  const depths = computeDepths(subs, byId);
+  return subs.map((sub) => ({ sub, depth: depths[sub.id] ?? 0 }));
+}
+
+function computeDepths(
+  subs: Subtask[],
+  byId: Record<string, Subtask>,
+): Record<string, number> {
+  const depths: Record<string, number> = {};
+  const visiting = new Set<string>();
+  function depthOf(id: string): number {
+    if (id in depths) return depths[id];
+    if (visiting.has(id)) return 0;
+    const s = byId[id];
+    if (!s) return 0;
+    visiting.add(id);
+    const blockers = s.blockedBy.filter((b) => byId[b]);
+    const d = blockers.length === 0 ? 0 : 1 + Math.max(...blockers.map(depthOf));
+    visiting.delete(id);
+    depths[id] = d;
+    return d;
+  }
+  for (const s of subs) depthOf(s.id);
+  return depths;
+}
+
+// =========================================================================
+// Subtask DAG view — layered SVG, zero deps
+// =========================================================================
+
+const DAG_NODE_W = 240;
+const DAG_NODE_H = 44;
+const DAG_COL_GAP = 72;
+const DAG_ROW_GAP = 14;
+const DAG_TITLE_CHARS = 28;
+const DAG_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+function SubtaskDag(props: {
+  subs: Subtask[];
+  byId: Record<string, Subtask>;
+  onClickNode: (s: Subtask) => void;
+}) {
+  const { subs, byId } = props;
+  const depths = computeDepths(subs, byId);
+  const [zoom, setZoom] = useLocalStorage<number>('pc:subtask-dag-zoom', 1);
+
+  // Group by depth, preserving original index order within each layer
+  const layers: Subtask[][] = [];
+  for (const s of subs) {
+    const d = depths[s.id] ?? 0;
+    while (layers.length <= d) layers.push([]);
+    layers[d].push(s);
+  }
+
+  const positions: Record<string, { x: number; y: number }> = {};
+  layers.forEach((layer, d) => {
+    layer.forEach((s, i) => {
+      positions[s.id] = {
+        x: d * (DAG_NODE_W + DAG_COL_GAP),
+        y: i * (DAG_NODE_H + DAG_ROW_GAP),
+      };
+    });
+  });
+
+  const baseW = layers.length * (DAG_NODE_W + DAG_COL_GAP);
+  const baseH =
+    (layers.reduce((m, l) => Math.max(m, l.length), 0)) * (DAG_NODE_H + DAG_ROW_GAP);
+  const width = Math.max(baseW * zoom, 1);
+  const height = Math.max(baseH * zoom, 1);
+
+  function statusOf(s: Subtask): 'done' | 'blocked' | 'pending' {
+    if (s.done) return 'done';
+    if (s.blockedBy.some((b) => byId[b] && !byId[b].done)) return 'blocked';
+    return 'pending';
+  }
+
+  function truncate(s: string, n: number) {
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+
+  function bumpZoom(dir: -1 | 1) {
+    const idx = DAG_ZOOM_LEVELS.findIndex((z) => Math.abs(z - zoom) < 0.01);
+    const safe = idx < 0 ? DAG_ZOOM_LEVELS.indexOf(1) : idx;
+    const next = Math.max(0, Math.min(DAG_ZOOM_LEVELS.length - 1, safe + dir));
+    setZoom(DAG_ZOOM_LEVELS[next]);
+  }
+
+  return (
+    <div className="subtask-dag-wrap">
+      <div className="subtask-dag-toolbar">
+        <button onClick={() => bumpZoom(-1)} title="Zoom out" disabled={zoom <= DAG_ZOOM_LEVELS[0]}>
+          −
+        </button>
+        <button onClick={() => setZoom(1)} title="Reset zoom">
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          onClick={() => bumpZoom(1)}
+          title="Zoom in"
+          disabled={zoom >= DAG_ZOOM_LEVELS[DAG_ZOOM_LEVELS.length - 1]}
+        >
+          +
+        </button>
+      </div>
+      <svg
+        className="subtask-dag"
+        width={width}
+        height={height}
+        viewBox={`0 0 ${Math.max(baseW, 1)} ${Math.max(baseH, 1)}`}
+        style={{ width, height, minWidth: width, flexShrink: 0 }}
+      >
+        <defs>
+          <marker
+            id="dag-arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+        </defs>
+        {/* Edges (drawn first, under nodes) */}
+        {subs.flatMap((s) =>
+          s.blockedBy
+            .filter((bid) => byId[bid])
+            .map((bid) => {
+              const from = positions[bid];
+              const to = positions[s.id];
+              if (!from || !to) return null;
+              const x1 = from.x + DAG_NODE_W;
+              const y1 = from.y + DAG_NODE_H / 2;
+              const x2 = to.x;
+              const y2 = to.y + DAG_NODE_H / 2;
+              const cx = (x1 + x2) / 2;
+              const blocking = !byId[bid].done;
+              return (
+                <path
+                  key={`${bid}->${s.id}`}
+                  className={`dag-edge ${blocking ? 'blocking' : ''}`}
+                  d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
+                  markerEnd="url(#dag-arrow)"
+                />
+              );
+            }),
+        )}
+        {/* Nodes */}
+        {subs.map((s) => {
+          const p = positions[s.id];
+          if (!p) return null;
+          const status = statusOf(s);
+          return (
+            <g
+              key={s.id}
+              className={`dag-node ${status} ${s.done ? 'is-done' : ''}`}
+              transform={`translate(${p.x}, ${p.y})`}
+              onClick={() => props.onClickNode(s)}
+            >
+              <rect width={DAG_NODE_W} height={DAG_NODE_H} rx="6" />
+              <circle className={`dag-dot ${status}`} cx="14" cy={DAG_NODE_H / 2} r="4" />
+              <text x="28" y={DAG_NODE_H / 2 + 4}>
+                {truncate(s.title, DAG_TITLE_CHARS)}
+              </text>
+              <title>{s.title}</title>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 export function DetailPanel(props: {
   projectId: string;
@@ -254,13 +439,14 @@ function CardView(props: {
       <div className="detail-section">
         <div className="detail-label">Requirement (body)</div>
         {card.body?.trim() ? (
-          <Markdown source={card.body} />
+          <Markdown source={card.body} projectId={props.projectId} />
         ) : (
           <em className="nested-empty-inline">（无描述,点 Edit 补全）</em>
         )}
       </div>
 
       <SubtaskSection
+        projectId={props.projectId}
         card={card}
         onAdd={addSubtask}
         onToggleDone={(s) =>
@@ -284,6 +470,7 @@ function CardView(props: {
       />
 
       <ReferenceSection
+        projectId={props.projectId}
         card={card}
         onAdd={addReference}
         onEdit={(r) => props.onEdit({ kind: 'reference', id: r.id })}
@@ -300,6 +487,7 @@ function CardView(props: {
       />
 
       <FindingSection
+        projectId={props.projectId}
         card={card}
         onAdd={addFinding}
         onEdit={(f) => props.onEdit({ kind: 'finding', id: f.id })}
@@ -344,6 +532,7 @@ function CardView(props: {
 // =========================================================================
 
 function SubtaskSection(props: {
+  projectId: string;
   card: Card;
   onAdd: () => void;
   onToggleDone: (s: Subtask) => void;
@@ -351,8 +540,11 @@ function SubtaskSection(props: {
   onDelete: (s: Subtask) => void;
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useLocalStorage<'list' | 'graph'>('pc:subtask-view', 'list');
   const subs = props.card.subtasks;
   const byId = Object.fromEntries(subs.map((s) => [s.id, s]));
+  const sortedSubs = annotateDepth(subs, byId);
+  const hasAnyDeps = subs.some((s) => s.blockedBy.length > 0);
 
   function toggleOpen(id: string) {
     setOpenIds((prev) => {
@@ -369,14 +561,38 @@ function SubtaskSection(props: {
         <div className="detail-label">
           Subtasks <span className="counter">{subs.length}</span>
         </div>
+        {hasAnyDeps && (
+          <div className="subtask-view-toggle" role="tablist">
+            <button
+              role="tab"
+              aria-selected={view === 'list'}
+              className={view === 'list' ? 'active' : ''}
+              onClick={() => setView('list')}
+              title="List view"
+            >
+              List
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === 'graph'}
+              className={view === 'graph' ? 'active' : ''}
+              onClick={() => setView('graph')}
+              title="Dependency graph"
+            >
+              Graph
+            </button>
+          </div>
+        )}
         <button className="add-card-btn" onClick={props.onAdd} title="Add subtask">
           +
         </button>
       </div>
       {subs.length === 0 ? (
         <div className="nested-empty">（暂无子任务）</div>
+      ) : view === 'graph' && hasAnyDeps ? (
+        <SubtaskDag subs={subs} byId={byId} onClickNode={props.onEdit} />
       ) : (
-        subs.map((s) => {
+        sortedSubs.map(({ sub: s, depth }) => {
           const blockedByLabels = s.blockedBy
             .map((bid) =>
               byId[bid] ? `#${bid.slice(2, 7)} ${byId[bid].title.slice(0, 30)}` : bid,
@@ -390,7 +606,11 @@ function SubtaskSection(props: {
           const dotCls = s.done ? 'done' : isBlocked ? 'blocked' : 'pending';
           const open = openIds.has(s.id);
           return (
-            <div key={s.id} className={`nested-item ${s.done ? 'is-done' : ''}`}>
+            <div
+              key={s.id}
+              className={`nested-item ${s.done ? 'is-done' : ''} ${depth > 0 ? 'has-deps' : ''}`}
+              style={depth > 0 ? { marginLeft: depth * 16 } : undefined}
+            >
               <div className="nested-row">
                 <input
                   type="checkbox"
@@ -416,7 +636,7 @@ function SubtaskSection(props: {
               {open && (
                 <div className="nested-body">
                   {s.body?.trim() ? (
-                    <Markdown source={s.body} />
+                    <Markdown source={s.body} projectId={props.projectId} />
                   ) : (
                     <em className="nested-empty-inline">（无详情）</em>
                   )}
@@ -441,12 +661,35 @@ function SubtaskSection(props: {
 // =========================================================================
 
 function ReferenceSection(props: {
+  projectId: string;
   card: Card;
   onAdd: () => void;
   onEdit: (r: Reference) => void;
   onDelete: (r: Reference) => void;
 }) {
   const refs = props.card.references;
+  const dialog = useDialog();
+
+  function isLocal(url: string) {
+    return !!url && !/^[a-z][a-z0-9+.-]*:/i.test(url);
+  }
+  function isImageUrl(url: string) {
+    const lower = url.toLowerCase().split('?')[0].split('#')[0];
+    return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(lower);
+  }
+  function openRef(e: React.MouseEvent, r: Reference) {
+    if (!r.url || !isLocal(r.url)) return; // external links → default new-tab behavior
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    const resolved = resolveRefUrl(r.url, props.projectId);
+    dialog.preview({
+      title: r.title,
+      url: resolved,
+      filename: r.url,
+      externalHref: resolved,
+      kind: isImageUrl(r.url) ? 'image' : 'fetch',
+    });
+  }
   return (
     <div className="detail-section">
       <div className="detail-section-header">
@@ -476,7 +719,13 @@ function ReferenceSection(props: {
               </svg>
               <div className="nested-title-wrap">
                 {r.url ? (
-                  <a href={r.url} target="_blank" rel="noopener" className="nested-title">
+                  <a
+                    href={resolveRefUrl(r.url, props.projectId)}
+                    target="_blank"
+                    rel="noopener"
+                    className="nested-title"
+                    onClick={(e) => openRef(e, r)}
+                  >
                     {r.title}
                   </a>
                 ) : (
@@ -503,6 +752,7 @@ function ReferenceSection(props: {
 // =========================================================================
 
 function FindingSection(props: {
+  projectId: string;
   card: Card;
   onAdd: () => void;
   onEdit: (f: Finding) => void;
@@ -565,7 +815,7 @@ function FindingSection(props: {
               </div>
               {open && (
                 <div className="nested-body">
-                  {f.body?.trim() ? <Markdown source={f.body} /> : <em>（空）</em>}
+                  {f.body?.trim() ? <Markdown source={f.body} projectId={props.projectId} /> : <em>（空）</em>}
                   <div className="nested-actions">
                     <button onClick={() => props.onEdit(f)}>Edit</button>
                     <button className="danger" onClick={() => props.onDelete(f)}>

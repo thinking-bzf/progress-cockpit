@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Markdown } from '../markdown';
 
 // ============ Types ============
 
@@ -52,12 +53,22 @@ export interface FormOpts {
   cancelLabel?: string;
 }
 
+export interface PreviewOpts {
+  title?: string;
+  url: string;       // pre-resolved URL the modal will load
+  filename?: string; // original path/filename — used to detect markdown
+  externalHref?: string;  // optional "open in new tab" target
+  /** How to render. Default 'fetch' — text/markdown body. 'image' embeds via <img>. */
+  kind?: 'fetch' | 'image';
+}
+
 export type ToastKind = 'info' | 'success' | 'error';
 
 interface DialogAPI {
   prompt(opts: PromptOpts): Promise<string | null>;
   confirm(opts: ConfirmOpts): Promise<boolean>;
   form<T extends Record<string, string>>(opts: FormOpts): Promise<T | null>;
+  preview(opts: PreviewOpts): void;
   toast(message: string, kind?: ToastKind): void;
 }
 
@@ -65,6 +76,7 @@ type DialogState =
   | { kind: 'prompt'; opts: PromptOpts; resolve: (v: string | null) => void }
   | { kind: 'confirm'; opts: ConfirmOpts; resolve: (v: boolean) => void }
   | { kind: 'form'; opts: FormOpts; resolve: (v: Record<string, string> | null) => void }
+  | { kind: 'preview'; opts: PreviewOpts }
   | null;
 
 interface ToastItem {
@@ -105,6 +117,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
             resolve: (v) => resolve(v as T | null),
           });
         }),
+      preview: (opts) => {
+        setState({ kind: 'preview', opts });
+      },
       toast: (message, kind = 'info') => {
         const id = Math.random().toString(36).slice(2, 10);
         setToasts((prev) => [...prev, { id, message, kind }]);
@@ -148,14 +163,16 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
   function cancel() {
     if (state.kind === 'prompt') state.resolve(null);
     else if (state.kind === 'confirm') state.resolve(false);
-    else state.resolve(null);
+    else if (state.kind === 'form') state.resolve(null);
     onClose();
   }
+
+  const isPreview = state.kind === 'preview';
 
   return (
     <div className="modal-overlay" onClick={cancel}>
       <div
-        className="modal"
+        className={`modal ${isPreview ? 'modal-preview' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -169,6 +186,7 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
         {state.kind === 'form' && (
           <FormBody opts={state.opts} resolve={state.resolve} onClose={onClose} />
         )}
+        {state.kind === 'preview' && <PreviewBody opts={state.opts} onClose={onClose} />}
       </div>
     </div>
   );
@@ -387,6 +405,82 @@ function FormBody({
         <button className="btn primary" onClick={submit}>
           {opts.submitLabel ?? 'OK'}
         </button>
+      </div>
+    </>
+  );
+}
+
+// ============ Preview ============
+
+function isMarkdownPath(p: string | undefined): boolean {
+  if (!p) return false;
+  const lower = p.toLowerCase().split('?')[0].split('#')[0];
+  return lower.endsWith('.md') || lower.endsWith('.markdown');
+}
+
+function PreviewBody({ opts, onClose }: { opts: PreviewOpts; onClose: () => void }) {
+  const kind = opts.kind ?? 'fetch';
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isMd = isMarkdownPath(opts.filename ?? opts.url);
+
+  useEffect(() => {
+    if (kind !== 'fetch') return;
+    let cancelled = false;
+    setContent(null);
+    setError(null);
+    fetch(opts.url)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((text) => {
+        if (!cancelled) setContent(text);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e?.message ?? e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [opts.url, kind]);
+
+  return (
+    <>
+      <div className="preview-header">
+        <div className="preview-title">
+          <span className="preview-title-text">{opts.title || opts.filename || 'Preview'}</span>
+          {opts.filename && opts.filename !== opts.title && (
+            <span className="preview-filename">{opts.filename}</span>
+          )}
+        </div>
+        <div className="preview-actions">
+          <a
+            className="btn"
+            href={opts.externalHref ?? opts.url}
+            target="_blank"
+            rel="noopener"
+            title="Open in new tab"
+          >
+            ↗ Open
+          </a>
+          <button className="btn" onClick={onClose} title="Close (Esc)">
+            ×
+          </button>
+        </div>
+      </div>
+      <div className={`preview-body ${kind === 'image' ? 'is-embed' : ''}`}>
+        {kind === 'image' ? (
+          <img className="preview-image" src={opts.url} alt={opts.title ?? ''} />
+        ) : error ? (
+          <div className="preview-error">Failed to load: {error}</div>
+        ) : content == null ? (
+          <div className="preview-loading">Loading…</div>
+        ) : isMd ? (
+          <Markdown source={content} />
+        ) : (
+          <pre className="preview-raw">{content}</pre>
+        )}
       </div>
     </>
   );
