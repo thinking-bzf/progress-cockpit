@@ -10,8 +10,10 @@ ClaudeProgressSource implements writes.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
+import threading
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,10 +96,31 @@ def _card_to_legacy(c: Card) -> dict:
 # ---------------------------------------------------------------------------
 # .claude-progress source
 # ---------------------------------------------------------------------------
+def _serialized(method):
+    """Serialize per-session_id read-modify-write inside ClaudeProgressSource."""
+    @functools.wraps(method)
+    def wrapper(self, session_id, *args, **kwargs):
+        with self._lock_for(session_id):
+            return method(self, session_id, *args, **kwargs)
+    return wrapper
+
+
 class ClaudeProgressSource(DataSource):
     """Reads from the explicit registry — see backend/registry.py."""
 
     name = "claude-progress"
+
+    def __init__(self) -> None:
+        self._locks: dict[str, threading.Lock] = {}
+        self._meta_lock = threading.Lock()
+
+    def _lock_for(self, session_id: str) -> threading.Lock:
+        with self._meta_lock:
+            lock = self._locks.get(session_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[session_id] = lock
+            return lock
 
     def _entries(self) -> list[tuple[str, Path]]:
         from .registry import list_projects
@@ -161,6 +184,7 @@ class ClaudeProgressSource(DataSource):
             return None
         return get_or_migrate(proj)
 
+    @_serialized
     def create_card(self, session_id: str, payload: dict) -> Card | None:
         proj = self._resolve(session_id)
         if proj is None:
@@ -174,6 +198,7 @@ class ClaudeProgressSource(DataSource):
         save_state(proj, state)
         return card
 
+    @_serialized
     def update_card(self, session_id: str, card_id: str, patch: dict) -> Card | None:
         proj = self._resolve(session_id)
         if proj is None:
@@ -193,6 +218,7 @@ class ClaudeProgressSource(DataSource):
         save_state(proj, state)
         return card
 
+    @_serialized
     def delete_card(self, session_id: str, card_id: str) -> bool:
         proj = self._resolve(session_id)
         if proj is None:
@@ -230,6 +256,7 @@ class ClaudeProgressSource(DataSource):
             obj.updatedAt = utcnow()
 
     # --- subtasks --------------------------------------------------------
+    @_serialized
     def create_subtask(self, session_id, card_id, payload):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -241,6 +268,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return sub
 
+    @_serialized
     def update_subtask(self, session_id, card_id, sub_id, patch):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -252,6 +280,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return sub
 
+    @_serialized
     def delete_subtask(self, session_id, card_id, sub_id):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -267,6 +296,7 @@ class ClaudeProgressSource(DataSource):
         return True
 
     # --- references ------------------------------------------------------
+    @_serialized
     def create_reference(self, session_id, card_id, payload):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -278,6 +308,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return ref
 
+    @_serialized
     def update_reference(self, session_id, card_id, ref_id, patch):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -289,6 +320,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return ref
 
+    @_serialized
     def delete_reference(self, session_id, card_id, ref_id):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -301,6 +333,7 @@ class ClaudeProgressSource(DataSource):
         return True
 
     # --- findings --------------------------------------------------------
+    @_serialized
     def create_finding(self, session_id, card_id, payload):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -312,6 +345,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return f
 
+    @_serialized
     def update_finding(self, session_id, card_id, fid, patch):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:
@@ -323,6 +357,7 @@ class ClaudeProgressSource(DataSource):
         self._save_after_card_change(proj, state, card)
         return f
 
+    @_serialized
     def delete_finding(self, session_id, card_id, fid):
         proj, state, card = self._resolve_card(session_id, card_id)
         if card is None:

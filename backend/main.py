@@ -1,6 +1,7 @@
 """FastAPI app: read API matches L1AD/claude-task-viewer; write API operates on state.json."""
 from __future__ import annotations
 
+import mimetypes
 import os
 from pathlib import Path
 
@@ -111,6 +112,46 @@ def create_app() -> FastAPI:
         if state is None:
             raise HTTPException(404, "session not found or unsupported source")
         return state.model_dump(mode="json")
+
+    # ---- project-local file fetch (for relative reference URLs) ---------
+    @app.get("/api/projects/{session_id}/file")
+    def get_project_file(session_id: str, path: str = Query(..., min_length=1)):
+        """Serve a file from inside a registered project root.
+
+        Used so reference URLs that are relative paths (e.g. `docs/rfc.md`) can
+        be opened in the browser. Path is resolved under the project root and
+        rejected if it escapes via symlink or `..`.
+        """
+        pr = registry.find_by_id(session_id)
+        if pr is None:
+            raise HTTPException(404, "project not found")
+        root = Path(pr["path"]).resolve()
+        if path.startswith("/") or path.startswith("\\"):
+            raise HTTPException(400, "absolute paths not allowed")
+        try:
+            target = (root / path).resolve()
+            target.relative_to(root)
+        except (ValueError, OSError):
+            raise HTTPException(403, "path escapes project root")
+        if not target.is_file():
+            raise HTTPException(404, f"file not found: {path}")
+        # 10 MB ceiling — tracker references shouldn't be huge binaries
+        if target.stat().st_size > 10 * 1024 * 1024:
+            raise HTTPException(413, "file too large (>10 MB)")
+        # Markdown / unknown text → text/plain so the browser displays inline
+        # instead of triggering a download.
+        ext = target.suffix.lower()
+        if ext in {".md", ".markdown"}:
+            media = "text/plain; charset=utf-8"
+        else:
+            guessed, _ = mimetypes.guess_type(target.name)
+            if guessed is None:
+                media = "text/plain; charset=utf-8"
+            elif guessed.startswith("text/") and "charset" not in guessed:
+                media = f"{guessed}; charset=utf-8"
+            else:
+                media = guessed
+        return FileResponse(target, media_type=media)
 
     @app.post("/api/projects/{session_id}/cards", status_code=201)
     def create_card(session_id: str, payload: dict = Body(...), source: str | None = None):

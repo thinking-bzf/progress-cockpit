@@ -9,6 +9,7 @@ Layout:
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,12 +52,17 @@ def load_state(project_root: Path) -> ProgressState | None:
 
 
 def save_state(project_root: Path, state: ProgressState) -> None:
+    """Atomic write: tmp file → fsync → os.replace. Crash-safe; same-fs rename is atomic on POSIX."""
     progress_dir(project_root).mkdir(exist_ok=True)
     state.updatedAt = utcnow()
-    state_json_path(project_root).write_text(
-        state.model_dump_json(indent=2, exclude_none=False),
-        encoding="utf-8",
-    )
+    target = state_json_path(project_root)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    payload = state.model_dump_json(indent=2, exclude_none=False)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, target)
 
 
 def archive_md(project_root: Path) -> Path | None:
