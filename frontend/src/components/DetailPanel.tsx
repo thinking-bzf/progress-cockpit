@@ -539,19 +539,21 @@ function SubtaskSection(props: {
   onEdit: (s: Subtask) => void;
   onDelete: (s: Subtask) => void;
 }) {
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const dialog = useDialog();
   const [view, setView] = useLocalStorage<'list' | 'graph'>('pc:subtask-view', 'list');
   const subs = props.card.subtasks;
   const byId = Object.fromEntries(subs.map((s) => [s.id, s]));
   const sortedSubs = annotateDepth(subs, byId);
   const hasAnyDeps = subs.some((s) => s.blockedBy.length > 0);
 
-  function toggleOpen(id: string) {
-    setOpenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  function openPreview(s: Subtask) {
+    dialog.subtaskPreview({
+      subtask: s,
+      siblings: subs,
+      projectId: props.projectId,
+      onToggleDone: () => props.onToggleDone(s),
+      onEdit: () => props.onEdit(s),
+      onDelete: () => props.onDelete(s),
     });
   }
 
@@ -590,7 +592,7 @@ function SubtaskSection(props: {
       {subs.length === 0 ? (
         <div className="nested-empty">（暂无子任务）</div>
       ) : view === 'graph' && hasAnyDeps ? (
-        <SubtaskDag subs={subs} byId={byId} onClickNode={props.onEdit} />
+        <SubtaskDag subs={subs} byId={byId} onClickNode={openPreview} />
       ) : (
         sortedSubs.map(({ sub: s, depth }) => {
           const blockedByLabels = s.blockedBy
@@ -604,17 +606,26 @@ function SubtaskSection(props: {
             .join(', ');
           const isBlocked = s.blockedBy.some((bid) => byId[bid] && !byId[bid].done);
           const dotCls = s.done ? 'done' : isBlocked ? 'blocked' : 'pending';
-          const open = openIds.has(s.id);
           return (
             <div
               key={s.id}
-              className={`nested-item ${s.done ? 'is-done' : ''} ${depth > 0 ? 'has-deps' : ''}`}
+              role="button"
+              tabIndex={0}
+              className={`nested-item clickable ${s.done ? 'is-done' : ''} ${depth > 0 ? 'has-deps' : ''}`}
               style={depth > 0 ? { marginLeft: depth * 16 } : undefined}
+              onClick={() => openPreview(s)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPreview(s);
+                }
+              }}
             >
               <div className="nested-row">
                 <input
                   type="checkbox"
                   checked={s.done}
+                  onClick={(e) => e.stopPropagation()}
                   onChange={() => props.onToggleDone(s)}
                 />
                 <div className="nested-title-wrap">
@@ -623,31 +634,7 @@ function SubtaskSection(props: {
                   {blockedByLabels && <span className="nested-meta">⛔ {blockedByLabels}</span>}
                   {blocksList && <span className="nested-meta">→ blocks {blocksList}</span>}
                 </div>
-                <button
-                  className={`nested-toggle ${open ? 'expanded' : ''}`}
-                  onClick={() => toggleOpen(s.id)}
-                  title="Expand"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </button>
               </div>
-              {open && (
-                <div className="nested-body">
-                  {s.body?.trim() ? (
-                    <Markdown source={s.body} projectId={props.projectId} />
-                  ) : (
-                    <em className="nested-empty-inline">（无详情）</em>
-                  )}
-                  <div className="nested-actions">
-                    <button onClick={() => props.onEdit(s)}>Edit</button>
-                    <button className="danger" onClick={() => props.onDelete(s)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })

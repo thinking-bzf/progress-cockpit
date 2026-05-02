@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Markdown } from '../markdown';
+import type { Subtask } from '../types';
 
 // ============ Types ============
 
@@ -62,6 +63,15 @@ export interface PreviewOpts {
   kind?: 'fetch' | 'image';
 }
 
+export interface SubtaskPreviewOpts {
+  subtask: Subtask;
+  siblings: Subtask[];   // for resolving blockedBy/blocks ids → titles
+  projectId?: string | null;  // threaded into Markdown for relative-link rewrite
+  onToggleDone: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
 export type ToastKind = 'info' | 'success' | 'error';
 
 interface DialogAPI {
@@ -69,6 +79,7 @@ interface DialogAPI {
   confirm(opts: ConfirmOpts): Promise<boolean>;
   form<T extends Record<string, string>>(opts: FormOpts): Promise<T | null>;
   preview(opts: PreviewOpts): void;
+  subtaskPreview(opts: SubtaskPreviewOpts): void;
   toast(message: string, kind?: ToastKind): void;
 }
 
@@ -77,6 +88,7 @@ type DialogState =
   | { kind: 'confirm'; opts: ConfirmOpts; resolve: (v: boolean) => void }
   | { kind: 'form'; opts: FormOpts; resolve: (v: Record<string, string> | null) => void }
   | { kind: 'preview'; opts: PreviewOpts }
+  | { kind: 'subtask-preview'; opts: SubtaskPreviewOpts }
   | null;
 
 interface ToastItem {
@@ -119,6 +131,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         }),
       preview: (opts) => {
         setState({ kind: 'preview', opts });
+      },
+      subtaskPreview: (opts) => {
+        setState({ kind: 'subtask-preview', opts });
       },
       toast: (message, kind = 'info') => {
         const id = Math.random().toString(36).slice(2, 10);
@@ -167,12 +182,17 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
     onClose();
   }
 
-  const isPreview = state.kind === 'preview';
+  const wideKind =
+    state.kind === 'preview'
+      ? 'modal-preview'
+      : state.kind === 'subtask-preview'
+        ? 'modal-subtask-preview'
+        : '';
 
   return (
     <div className="modal-overlay" onClick={cancel}>
       <div
-        className={`modal ${isPreview ? 'modal-preview' : ''}`}
+        className={`modal ${wideKind}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -187,6 +207,9 @@ function DialogModal({ state, onClose }: { state: NonNullable<DialogState>; onCl
           <FormBody opts={state.opts} resolve={state.resolve} onClose={onClose} />
         )}
         {state.kind === 'preview' && <PreviewBody opts={state.opts} onClose={onClose} />}
+        {state.kind === 'subtask-preview' && (
+          <SubtaskPreviewBody opts={state.opts} onClose={onClose} />
+        )}
       </div>
     </div>
   );
@@ -481,6 +504,102 @@ function PreviewBody({ opts, onClose }: { opts: PreviewOpts; onClose: () => void
         ) : (
           <pre className="preview-raw">{content}</pre>
         )}
+      </div>
+    </>
+  );
+}
+
+// ============ Subtask preview ============
+
+function SubtaskPreviewBody({
+  opts,
+  onClose,
+}: {
+  opts: SubtaskPreviewOpts;
+  onClose: () => void;
+}) {
+  const { subtask: s, siblings } = opts;
+  const byId = Object.fromEntries(siblings.map((sib) => [sib.id, sib]));
+  const blockers = s.blockedBy.filter((b) => byId[b]).map((b) => byId[b]);
+  const blockedByMe = siblings.filter((o) => o.blockedBy.includes(s.id) && o.id !== s.id);
+  const isBlocked = blockers.some((b) => !b.done);
+  const status: 'done' | 'blocked' | 'pending' = s.done
+    ? 'done'
+    : isBlocked
+      ? 'blocked'
+      : 'pending';
+
+  function dispatch(handler: () => void) {
+    handler();
+    onClose();
+  }
+
+  return (
+    <>
+      <div className="preview-header">
+        <div className="preview-title">
+          <span className={`preview-status-dot ${status}`} aria-hidden="true" />
+          <span className="preview-title-text">{s.title}</span>
+          <span className="preview-filename">#{s.id.slice(2, 7)}</span>
+        </div>
+        <div className="preview-actions">
+          <button className="btn" onClick={onClose} title="Close (Esc)">
+            ×
+          </button>
+        </div>
+      </div>
+      <div className="preview-body subtask-preview-body">
+        {(blockers.length > 0 || blockedByMe.length > 0) && (
+          <div className="subtask-preview-deps">
+            {blockers.length > 0 && (
+              <div className="subtask-preview-dep-row">
+                <span className="subtask-preview-dep-label">⛔ Blocked by</span>
+                <span className="subtask-preview-dep-list">
+                  {blockers.map((b, i) => (
+                    <span key={b.id} className={b.done ? 'is-done' : ''}>
+                      {i > 0 && ', '}
+                      <code>#{b.id.slice(2, 7)}</code> {b.title}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+            {blockedByMe.length > 0 && (
+              <div className="subtask-preview-dep-row">
+                <span className="subtask-preview-dep-label">→ Blocks</span>
+                <span className="subtask-preview-dep-list">
+                  {blockedByMe.map((o, i) => (
+                    <span key={o.id}>
+                      {i > 0 && ', '}
+                      <code>#{o.id.slice(2, 7)}</code> {o.title}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="subtask-preview-content">
+          {s.body?.trim() ? (
+            <Markdown source={s.body} projectId={opts.projectId ?? null} />
+          ) : (
+            <em className="nested-empty-inline">（no description）</em>
+          )}
+        </div>
+      </div>
+      <div className="subtask-preview-actions">
+        <button
+          className={`btn ${s.done ? '' : 'primary'}`}
+          onClick={() => dispatch(opts.onToggleDone)}
+        >
+          {s.done ? '↶ Mark undone' : '✓ Mark done'}
+        </button>
+        <button className="btn" onClick={() => dispatch(opts.onEdit)}>
+          Edit
+        </button>
+        <button className="btn danger-solid" onClick={() => dispatch(opts.onDelete)}>
+          Delete
+        </button>
       </div>
     </>
   );
