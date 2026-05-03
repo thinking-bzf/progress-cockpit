@@ -138,6 +138,22 @@
   <img alt="markdown 预览覆盖层" src="./docs/screenshot-preview-light.png">
 </picture>
 
+### 长期背景与项目日志
+
+每个项目除了看板外,还有两份自由格式的 markdown 伴侣文档:`.claude-progress/CONTEXT.md`(变动慢的长期事实:技术栈、约定、关键决策)和 `.claude-progress/JOURNAL.md`(按日期倒序的时间线:做完了什么、做了什么决策、踩了什么坑)。两者都以 tab 形式出现在项目头部,文件变动时通过 SSE 热刷新。文件不存在的 tab 会带一个小灰点提示,正文里也会给出该创建的精确路径。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-context-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-context-light.png">
+  <img alt="长期背景 tab" src="./docs/screenshot-context-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-journal-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-journal-light.png">
+  <img alt="项目日志 tab" src="./docs/screenshot-journal-light.png">
+</picture>
+
 ### 卡片存储结构
 
 ```jsonc

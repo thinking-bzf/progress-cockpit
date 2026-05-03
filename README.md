@@ -138,6 +138,22 @@ Click a reference whose URL is a relative path (e.g. `docs/rfc.md`, `assets/desi
   <img alt="markdown preview overlay" src="./docs/screenshot-preview-light.png">
 </picture>
 
+### Context & Journal
+
+Each project has two free-form markdown companions to the kanban — `.claude-progress/CONTEXT.md` (slow-moving long-term facts: stack, conventions, key decisions) and `.claude-progress/JOURNAL.md` (dated timeline, newest at top: what got done, what was decided, what got hit). Both surface as tabs in the project header and hot-reload over SSE when the file is touched. Tabs without a file show a small dot and the body offers the exact path to create.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-context-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-context-light.png">
+  <img alt="long-term context tab" src="./docs/screenshot-context-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshot-journal-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/screenshot-journal-light.png">
+  <img alt="journal timeline tab" src="./docs/screenshot-journal-light.png">
+</picture>
+
 ### Card storage shape
 
 ```jsonc
