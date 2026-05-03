@@ -45,6 +45,24 @@ export function useProjectState(projectId: string | null) {
   });
 }
 
+export type DocKind = 'journal' | 'context';
+
+export interface ProjectDoc {
+  exists: boolean;
+  content: string;
+  mtime: number | null;
+  path: string | null;
+}
+
+export function useProjectDoc(projectId: string | null, kind: DocKind) {
+  return useQuery({
+    queryKey: ['doc', kind, projectId],
+    queryFn: () => req<ProjectDoc>('GET', `/projects/${projectId}/doc/${kind}`),
+    enabled: !!projectId,
+    staleTime: 2_000,
+  });
+}
+
 // ---- mutations: card --------------------------------------------------
 
 function useInvalidate(projectId: string | null) {

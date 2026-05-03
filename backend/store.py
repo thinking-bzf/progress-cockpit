@@ -29,6 +29,14 @@ def state_md_path(project_root: Path) -> Path:
     return progress_dir(project_root) / "STATE.md"
 
 
+def journal_md_path(project_root: Path) -> Path:
+    return progress_dir(project_root) / "JOURNAL.md"
+
+
+def context_md_path(project_root: Path) -> Path:
+    return progress_dir(project_root) / "CONTEXT.md"
+
+
 def archive_dir(project_root: Path) -> Path:
     return progress_dir(project_root) / "archive"
 

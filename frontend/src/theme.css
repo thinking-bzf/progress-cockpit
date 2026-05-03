@@ -1386,3 +1386,70 @@ body.col-resizing * { user-select: none !important; cursor: col-resize !importan
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
+
+/* ============ Project tabs (Cards / Context / Journal) ============ */
+.view-header-tabs {
+  align-items: flex-end;
+  padding-bottom: 0;
+}
+.project-tabs {
+  display: flex;
+  gap: 2px;
+  align-self: flex-end;
+  margin-bottom: -1px; /* overlap the header bottom border */
+}
+.project-tabs .tab {
+  position: relative;
+  padding: 8px 14px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-tabs .tab:hover { color: var(--text-secondary); }
+.project-tabs .tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-empty-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* ============ Doc view (CONTEXT.md / JOURNAL.md) ============ */
+.doc-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  max-width: 920px;
+  width: 100%;
+  align-self: center;
+}
+.doc-view.doc-empty {
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 48px 32px;
+}
+.doc-path {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-card, transparent);
+  padding: 4px 8px;
+  border-radius: 4px;
+}

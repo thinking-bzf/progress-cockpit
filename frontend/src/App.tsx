@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { Sidebar } from './components/Sidebar';
-import { Kanban } from './components/Kanban';
+import { ProjectView } from './components/ProjectView';
 import { DetailPanel } from './components/DetailPanel';
 import { useProjectState, useSessions } from './api';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -42,7 +42,7 @@ export default function App() {
       }
       main={
         projectId ? (
-          <Kanban
+          <ProjectView
             projectId={projectId}
             cards={cards}
             loading={stateQ.isLoading}

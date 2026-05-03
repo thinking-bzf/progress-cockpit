@@ -10,7 +10,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import type { Card, SessionSummary, Status } from '../types';
+import type { Card, Status } from '../types';
 import { STATUSES, statusLabel, useCreateCard, useUpdateCard } from '../api';
 import { useDialog } from './Dialog';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -61,7 +61,6 @@ export function Kanban(props: {
   loading: boolean;
   selectedCardId: string | null;
   onSelectCard: (id: string | null) => void;
-  session: SessionSummary | undefined;
 }) {
   const updateCard = useUpdateCard(props.projectId);
   const createCard = useCreateCard(props.projectId);
@@ -122,37 +121,25 @@ export function Kanban(props: {
   }
 
   return (
-    <>
-      <header className="view-header">
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <h1 className="view-title">{props.session?.name ?? props.projectId}</h1>
-          <p className="view-meta">
-            {props.session?.project} · {props.cards.length} cards ·{' '}
-            {cardsByStatus.completed.length} done · {cardsByStatus.in_progress.length} doing ·{' '}
-            {cardsByStatus.pending.length} todo
-          </p>
-        </div>
-      </header>
-      <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-        <div className="kanban" onClick={handleBackgroundClick}>
-          {STATUSES.map((s) => (
-            <Column
-              key={s}
-              status={s}
-              cards={cardsByStatus[s]}
-              loading={props.loading}
-              selectedCardId={props.selectedCardId}
-              onSelectCard={props.onSelectCard}
-              onAdd={() => addCard(s)}
-            />
-          ))}
-          <div className="kanban-spacer" aria-hidden />
-        </div>
-        <DragOverlay>
-          {activeCard ? <TaskCard card={activeCard} selected={false} dragging onClick={() => {}} /> : null}
-        </DragOverlay>
-      </DndContext>
-    </>
+    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      <div className="kanban" onClick={handleBackgroundClick}>
+        {STATUSES.map((s) => (
+          <Column
+            key={s}
+            status={s}
+            cards={cardsByStatus[s]}
+            loading={props.loading}
+            selectedCardId={props.selectedCardId}
+            onSelectCard={props.onSelectCard}
+            onAdd={() => addCard(s)}
+          />
+        ))}
+        <div className="kanban-spacer" aria-hidden />
+      </div>
+      <DragOverlay>
+        {activeCard ? <TaskCard card={activeCard} selected={false} dragging onClick={() => {}} /> : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
 

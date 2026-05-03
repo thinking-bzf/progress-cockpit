@@ -13,7 +13,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .sources import ClaudeProgressSource, build_sources
 from . import registry
-from .store import state_json_path
+from .store import context_md_path, journal_md_path, state_json_path
+
+DOC_PATHS = {"journal": journal_md_path, "context": context_md_path}
 
 DEFAULT_SOURCE = os.environ.get("PROGRESS_SOURCE", "claude-progress")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -115,6 +117,28 @@ def create_app() -> FastAPI:
         if state is None:
             raise HTTPException(404, "session not found or unsupported source")
         return state.model_dump(mode="json")
+
+    # ---- project doc fetch (JOURNAL.md / CONTEXT.md) --------------------
+    @app.get("/api/projects/{session_id}/doc/{kind}")
+    def get_project_doc(session_id: str, kind: str):
+        if kind not in DOC_PATHS:
+            raise HTTPException(404, f"unknown doc kind '{kind}'")
+        pr = registry.find_by_id(session_id)
+        if pr is None:
+            raise HTTPException(404, "project not found")
+        target = DOC_PATHS[kind](Path(pr["path"]))
+        if not target.is_file():
+            return {"exists": False, "content": "", "mtime": None, "path": str(target)}
+        try:
+            content = target.read_text(encoding="utf-8")
+        except OSError as e:
+            raise HTTPException(500, f"read failed: {e}")
+        return {
+            "exists": True,
+            "content": content,
+            "mtime": target.stat().st_mtime,
+            "path": str(target),
+        }
 
     # ---- project-local file fetch (for relative reference URLs) ---------
     @app.get("/api/projects/{session_id}/file")
@@ -267,13 +291,20 @@ def create_app() -> FastAPI:
         async def gen():
             yield "event: connected\ndata: {}\n\n"
             seen: dict[str, float] = {}
+            seen_docs: dict[tuple[str, str], float] = {}
             registry_mtime: float | None = None
             # Seed without emitting — only changes after this point produce events.
             for pr in registry.list_projects():
+                root = Path(pr["path"])
                 try:
-                    seen[pr["id"]] = state_json_path(Path(pr["path"])).stat().st_mtime
+                    seen[pr["id"]] = state_json_path(root).stat().st_mtime
                 except OSError:
                     pass
+                for kind, getter in DOC_PATHS.items():
+                    try:
+                        seen_docs[(pr["id"], kind)] = getter(root).stat().st_mtime
+                    except OSError:
+                        pass
             try:
                 registry_mtime = registry.REGISTRY_PATH.stat().st_mtime
             except OSError:
@@ -290,15 +321,27 @@ def create_app() -> FastAPI:
                     yield "event: sessions\ndata: {}\n\n"
 
                 for pr in registry.list_projects():
-                    try:
-                        mt = state_json_path(Path(pr["path"])).stat().st_mtime
-                    except OSError:
-                        continue
+                    root = Path(pr["path"])
                     pid = pr["id"]
-                    if seen.get(pid) != mt:
+                    try:
+                        mt = state_json_path(root).stat().st_mtime
+                    except OSError:
+                        mt = None
+                    if mt is not None and seen.get(pid) != mt:
                         seen[pid] = mt
                         payload = json.dumps({"projectId": pid})
                         yield f"event: state\ndata: {payload}\n\n"
+                    for kind, getter in DOC_PATHS.items():
+                        try:
+                            dmt = getter(root).stat().st_mtime
+                        except OSError:
+                            dmt = None
+                        key = (pid, kind)
+                        prev = seen_docs.get(key)
+                        if dmt != prev:
+                            seen_docs[key] = dmt  # type: ignore[assignment]
+                            payload = json.dumps({"projectId": pid, "doc": kind})
+                            yield f"event: doc\ndata: {payload}\n\n"
 
                 heartbeat += 1
                 if heartbeat >= 15:

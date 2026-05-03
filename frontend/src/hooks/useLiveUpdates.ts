@@ -19,6 +19,16 @@ export function useLiveUpdates() {
       qc.invalidateQueries({ queryKey: ['sessions'] });
       qc.invalidateQueries({ queryKey: ['registry'] });
     });
+    es.addEventListener('doc', (e) => {
+      try {
+        const { projectId, doc } = JSON.parse((e as MessageEvent).data);
+        if (projectId && doc) {
+          qc.invalidateQueries({ queryKey: ['doc', doc, projectId] });
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    });
     // EventSource auto-reconnects on error; no manual handling needed.
     return () => es.close();
   }, [qc]);
